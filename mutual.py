@@ -1,83 +1,42 @@
 import email_process as ep
 import numpy as np
+import process as pr
+import time
 
-# Any string with "Not" or "Non" in it is assigned with 0; otherwise 1
-# In this case, "NotSpam" is 0, "Spam" is 1
-def label_extract(class_label):
-    if class_label.find("Not") > -1 or class_label.find("Non") > -1:
-        return 0
-    else:
-        return 1
+start_time = time.time()
 
-# A dictionary for various filenames
-filename = {}
-filename["train_bag_words"] = "train_emails_bag_of_words_200.dat"
-filename["train_class"] = "train_emails_classes_200.txt"
-filename["train_email"] = "train_emails_samples_class_200.txt"
-filename["vocab"] = "train_emails_vocab_200.txt"
-filename["test_class"] = "test_emails_classes_0.txt"
-filename["test_email"] = "test_emails_samples_class_0.txt"
-filename["test_bag_words"] = "test_emails_bag_of_words_0.dat"
+DP = pr.Data_Process()
 
-# Email names for training set
-train_email_name = np.loadtxt(filename["train_email"], dtype=str)
-
-# Classes of each email for training set
-train_email_class = np.loadtxt(filename["train_class"], dtype=str)
-
-# Vocabulary
-vocab = np.loadtxt(filename["vocab"],dtype=str)
-
-print "Total number of emails: ", len(train_email_name)
-print "Total number of class labels: ", len(train_email_class)
-print "Total number of words: ", len(vocab)
-
-# Bag of words for training set
-train_bag_words = ep.read_bagofwords_dat(filename["train_bag_words"], len(train_email_name))
-
-print np.shape(train_bag_words)
-
-# Change "NotSpam" and "Spam" to 0 and 1
-label = {}
-label[train_email_class[0]] = label_extract(train_email_class[0])
-label[train_email_class[-1]] = label_extract(train_email_class[-1])
-
-train_email_class = [label[n] for n in train_email_class]
-
-# Read test data
-test_email_name = np.loadtxt(filename["test_email"], dtype=str)
-test_email_class = np.loadtxt(filename["test_class"], dtype=str)
-test_bag_words = ep.read_bagofwords_dat(filename["test_bag_words"], len(test_email_name))
-
-test_email_class = [label[n] for n in test_email_class]
+DP.read_data(detail=True)
+DP.data_frequency(idf=True)
 
 # Joint prob of word and email being spam
-joint_prob_spam = np.zeros(len(vocab))
+joint_prob_spam = np.zeros(len(DP.vocab))
 
 # Joint prob of word and email being not spam
-joint_prob_notspam = np.zeros(len(vocab))
+joint_prob_notspam = np.zeros(len(DP.vocab))
 
 # Check if spam and not spam are organized contiguously.
 # If it is, the position where a new type starts is stored in diff.
 # Otherwise an exception is raised
-start = train_email_class[0]
+start = DP.train_email_class[0]
 diff = 0
-for index in range(len(train_email_class)):
-    if start != train_email_class[index]:
+for index in range(len(DP.train_email_class)):
+    if start != DP.train_email_class[index]:
         diff = index
-        start = train_email_class[index]
+        start = DP.train_email_class[index]
 
-for index in range(diff, len(train_email_class)):
-    if start != train_email_class[index]:
+for index in range(diff, len(DP.train_email_class)):
+    if start != DP.train_email_class[index]:
         raise Exception("train_email_class not contiguous")
 
 # Record count of words in spam and not spam respectively
 if start == 1:
-    joint_prob_spam = np.sum(train_bag_words[:diff],axis=0)
-    joint_prob_notspam = np.sum(train_bag_words[diff:],axis=0)
+    joint_prob_spam = np.sum(DP.train_bag_words[:diff],axis=0)
+    joint_prob_notspam = np.sum(DP.train_bag_words[diff:],axis=0)
 else:
-    joint_prob_notspam = np.sum(train_bag_words[:diff],axis=0)
-    joint_prob_spam = np.sum(train_bag_words[diff:],axis=0)
+    joint_prob_notspam = np.sum(DP.train_bag_words[:diff],axis=0)
+    joint_prob_spam = np.sum(DP.train_bag_words[diff:],axis=0)
 
 # Kill zeros
 joint_prob_spam = [n+1 for n in joint_prob_spam]
@@ -112,35 +71,89 @@ I = np.zeros(len(word_prob))
 for i in range(len(word_prob)):
     I[i] = joint_prob_spam[i]*log(ratio_spam[i]) + joint_prob_notspam[i]*log(ratio_notspam[i])
 
-from sklearn.feature_extraction.text import TfidfTransformer
-from sklearn.naive_bayes import MultinomialNB
-
-tfidf_transformer = TfidfTransformer()
-train_bag_words_tfidf = tfidf_transformer.fit_transform(train_bag_words)
-
-test_bag_words_tfidf = tfidf_transformer.transform(test_bag_words)
-
-num = 20
-
 # Sort mutual information in descending order and take first num terms
 word_index_raw = np.argsort(I)[::-1]
 
-list_range = [5,10,20,100,200,1000,5000,9000]
+fit_time = time.time() - start_time
 
+hour, minute, second = pr.time_process(fit_time)
+
+print '\n'
+print 'fit time: ' + str(hour) + "h " + str(minute) + "m " + str(second) + "s "
+
+from sklearn.naive_bayes import MultinomialNB
+
+list_range = range(10,1001,10)
+
+temp = 1024
+while temp < len(word_index_raw):
+    list_range.append(temp)
+    temp = temp * 2
+
+list_range.append(len(word_index_raw))
+
+false_pos = []
+false_neg = []
+error_prob = []
+
+total_email = float(len(DP.test_email_class))
+
+
+start_time = time.time()
 for num in list_range:
+    #print "Choose " + str(num) + " words for fitting..."
     word_index = word_index_raw[:num]
 
-    clf = MultinomialNB().fit(train_bag_words_tfidf[:,word_index], train_email_class)
-    predicted = clf.predict(test_bag_words_tfidf[:,word_index])
+    clf = MultinomialNB().fit(DP.train_bag_words_transformed[:,word_index], DP.train_email_class)
+    predicted = clf.predict(DP.test_bag_words_transformed[:,word_index])
 
-    total_error = 0
-    for n in range(len(predicted)):
-        total_error += abs(predicted[n] - test_email_class[n])
+    total_error, notspam_error, spam_error = pr.test_result(predicted, DP.test_email_class, print_out = False)
 
-    print '\n', "Using " + str(num) + " words with highest MI:"
-    print "Total Number of Wrong Prediction: ", total_error
-    print "Total Number of Test Emails: ", len(test_email_name)
-    print "Probability of Error: ", float(total_error)/float(len(test_email_name))
+    error_prob.append(float(total_error)/total_email)
+    false_neg.append(spam_error)
+    false_pos.append(notspam_error)
+
+predict_time = time.time() - start_time
+hour, minute, second = pr.time_process(predict_time)
+
+print '\n'
+print 'Total prediction time: ' + str(hour) + "h " + str(minute) + "m " + str(second) + "s "
+print '\n'
+
+f = open("NB_Mutual_result.txt",'w')
+print >> f, "Number of Words", "Error Prob", "False Pos", "False Neg" 
+
+for i in range(len(list_range)):
+    print >> f, list_range[i], error_prob[i], false_pos[i], false_neg[i]
+
+import pylab
+
+# Set fonts for plotting
+font = {'weight' : 'normal',
+        'size'   : 18}
+
+pylab.rc('font', **font)
+
+pylab.figure(1)
+ax=pylab.subplot(111)
+ax.set_xlim(xmin = list_range[0] - 1, xmax = list_range[-1]+1)
+pylab.semilogx(list_range, error_prob, linewidth = 0, marker = 'o', markersize = 6)
+pylab.xlabel("Number of Words")
+pylab.ylabel("Error Prob")
+pylab.savefig("Error_prob_nb_mutual.pdf", box_inches='tight')
+
+pylab.figure(2)
+ax=pylab.subplot(111)
+ax.set_xlim(xmin = list_range[0] - 1, xmax = list_range[-1]+1)
+pylab.semilogx(list_range, false_pos, label = "false positive", linewidth = 0, marker = 'o', markersize = 6)
+pylab.semilogx(list_range, false_neg, label = "false negative", linewidth = 0, marker = 's', markersize = 6)
+pylab.legend(loc='upper right', ncol=1, prop={'size':15})
+pylab.xlabel("Number of Words")
+pylab.ylabel("Number of Emails")
+pylab.savefig("False_pos_neg_nb_mutual.pdf", box_inches='tight')
+
+pylab.show()
+
 
 """
 print '\n',"First " + str(num) +" words of highest MI:"
