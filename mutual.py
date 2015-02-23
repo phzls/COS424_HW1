@@ -121,7 +121,7 @@ print 'Total prediction time: ' + str(hour) + "h " + str(minute) + "m " + str(se
 print '\n'
 
 f = open("NB_Mutual_result.txt",'w')
-print >> f, "Number of Words", "Error Prob", "False Pos", "False Neg" 
+print >> f, "Number_of_Words", "Error_Prob", "False_Pos", "False_Neg"
 
 for i in range(len(list_range)):
     print >> f, list_range[i], error_prob[i], false_pos[i], false_neg[i]
