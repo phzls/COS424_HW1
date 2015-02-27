@@ -1,6 +1,8 @@
 import email_process as ep
 import numpy as np
 from sklearn.feature_extraction.text import TfidfTransformer
+from sklearn.metrics import roc_curve, auc, precision_recall_curve
+import pylab
 
 # Any string with "Not" or "Non" in it is assigned with 0; otherwise 1
 # In this case, "NotSpam" is 0, "Spam" is 1
@@ -12,6 +14,7 @@ def label_extract(class_label):
 
 class Data_Process(object):
     def __init__(self,filename=None):
+        self.fig_num_ = 1
         if filename == None:
             self.filename = {}
         else:
@@ -73,6 +76,72 @@ class Data_Process(object):
         tfidf_transformer = TfidfTransformer(use_idf = idf, sublinear_tf = sublinear_tf)
         self.train_bag_words_transformed = tfidf_transformer.fit_transform(self.train_bag_words)
         self.test_bag_words_transformed = tfidf_transformer.transform(self.test_bag_words)
+
+    def ROC_curve(self, proba, filename = None, save_plot = True, xmin = -0.01, xmax = 1,
+                  ymin = 0, ymax = 1.01, fig_num = 1, plot_show = True):
+        fpr, tpr, thresholds = roc_curve(self.test_email_class, proba)
+        roc_area = auc(fpr,tpr)
+
+        font = {'size'   : 18}
+        pylab.rc('font', **font)
+
+        if fig_num < self.fig_num_:
+            fig_num = self.fig_num_
+
+        pylab.figure(fig_num)
+        ax=pylab.subplot(111)
+        ax.set_xlim(xmin = xmin, xmax = xmax)
+        ax.set_ylim(ymax = ymax, ymin = ymin)
+
+        x = np.linspace(0,1,100)
+        legend = "ROC curve (area = " + str(roc_area) + " )"
+        pylab.plot(fpr, tpr, label = legend,linewidth = 3)
+        pylab.plot(x,x,linestyle = "--", linewidth = 3)
+
+        pylab.xlabel("False Positive Rate")
+        pylab.ylabel("True Positive Rate")
+        pylab.legend(loc="lower right", ncol=1, prop={'size':16})
+
+        if (filename is not None) and (save_plot is True):
+            pylab.savefig(filename+".pdf",box_inches='tight')
+
+        self.fig_num_ += 1
+
+        if plot_show is True:
+            pylab.show()
+
+    def PRC_curve(self, proba, filename = None, save_plot = True, xmin = -0.01, xmax = 1,
+                  ymin = 0, ymax = 1.01, fig_num = 1, plot_show = True):
+        precision, recall, thresholds = precision_recall_curve(self.test_email_class, proba)
+
+        font = {'size'   : 18}
+        pylab.rc('font', **font)
+
+        if fig_num < self.fig_num_:
+            fig_num = self.fig_num_
+
+        pylab.figure(fig_num)
+        ax=pylab.subplot(111)
+        ax.set_xlim(xmin = xmin, xmax = xmax)
+        ax.set_ylim(ymax = ymax, ymin = ymin)
+
+        x = np.linspace(0,1,100)
+        legend = "Precision recall curve"
+
+        pylab.plot(recall, precision, label = legend,linewidth = 3)
+        #pylab.plot(x,x,linestyle = "--", linewidth = 3)
+
+        pylab.xlabel("Recall")
+        pylab.ylabel("Precision")
+        pylab.legend(loc="lower right", ncol=1, prop={'size':16})
+
+        if (filename is not None) and (save_plot is True):
+            pylab.savefig(filename+".pdf",box_inches='tight')
+
+        self.fig_num_ += 1
+
+        if plot_show is True:
+            pylab.show()
 
 def test_result(predicted, test_email_class, print_out = True):
     total_error = 0
